@@ -1,12 +1,12 @@
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-export async function sendTelegram(lines: Record<string, string>) {
+export async function sendTelegram(lines: Record<string, string>, title = "🛍 <b>Yangi ariza!</b>") {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) throw new Error("TELEGRAM_BOT_TOKEN yoki TELEGRAM_CHAT_ID sozlanmagan");
 
   const text =
-    "🛍 <b>Yangi ariza!</b>\n\n" +
+    title + "\n\n" +
     Object.entries(lines)
       .filter(([, v]) => v)
       .map(([k, v]) => `<b>${esc(k)}:</b> ${esc(v)}`)
