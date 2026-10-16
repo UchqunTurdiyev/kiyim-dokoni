@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendTelegram } from "@/lib/telegram";
-import { sendCapiEvent } from "@/lib/capi";
+import { buildUserData, sendCapi } from "@/lib/capi";
 import { formatPrice, getProduct } from "@/lib/products";
+import { newLeadId } from "@/lib/leadToken";
+import { notifyLeadWithButton } from "@/lib/leadFlow";
+import { formatPhoneDigits, getClientSignals, siteUrl, utmToText } from "@/lib/request";
 
 export const runtime = "nodejs";
 
@@ -38,19 +40,11 @@ export async function POST(req: NextRequest) {
     const total = lines.reduce((s, l) => s + l.product.price * l.qty, 0);
     const count = lines.reduce((s, l) => s + l.qty, 0);
 
-    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || undefined;
-    const userAgent = req.headers.get("user-agent") ?? undefined;
-    const fbp = req.cookies.get("_fbp")?.value;
-    const fbc = req.cookies.get("_fbc")?.value;
-
+    const url = typeof pageUrl === "string" ? pageUrl.slice(0, 500) : undefined;
+    const leadId = newLeadId();
+    const signals = getClientSignals(req, url);
+    const userData = buildUserData({ phone: digits, firstName: cleanName, city: cleanAddress, externalId: digits, ...signals });
     const time = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
-    const formattedPhone = `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10)}`;
-    const utmText =
-      utm && typeof utm === "object"
-        ? Object.entries(utm as Record<string, string>)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(", ")
-        : "";
 
     const productsText = lines
       .map(
@@ -61,38 +55,49 @@ export async function POST(req: NextRequest) {
       )
       .join("\n");
 
+    // DIQQAT: bu yerda Purchase YUBORILMAYDI. Buyurtma hali to'lanmagan — bu Lead.
+    // Haqiqiy Purchase sotuvchi Telegramdagi "💰 To'lov qildi" tugmasini bosganda yuboriladi.
     const [tg, capi] = await Promise.allSettled([
-      sendTelegram(
-        {
+      notifyLeadWithButton({
+        title: "🛒 <b>Yangi buyurtma!</b>",
+        lines: {
+          "🆔 Lid": leadId,
           "👤 Ism": cleanName,
-          "📞 Telefon": formattedPhone,
+          "📞 Telefon": formatPhoneDigits(digits),
           "📍 Manzil": cleanAddress,
           "💬 Izoh": cleanComment,
           "🛍 Mahsulotlar": "\n" + productsText,
           "💰 Jami": `${formatPrice(total)} (${count} dona)`,
           "🧭 Manba": source === "buy-now" ? "Hozir sotib olish" : "Savat",
           "🕒 Vaqt": time,
-          "🔗 UTM": utmText,
+          "🔗 UTM": utmToText(utm),
+          "📊 Meta": signals.fbc ? "reklamadan (fbc bor)" : signals.fbp ? "pixel (fbp bor)" : "",
         },
-        "🛒 <b>Yangi buyurtma!</b>"
-      ),
-      sendCapiEvent({
-        eventName: "Purchase",
-        eventId: String(eventId ?? ""),
-        eventSourceUrl: pageUrl,
-        phone: digits,
-        firstName: cleanName,
-        city: cleanAddress,
-        ip,
-        userAgent,
-        fbp,
-        fbc,
+        baseUrl: siteUrl(req),
+        payload: {
+          v: 1,
+          lid: leadId,
+          t: Math.floor(Date.now() / 1000),
+          src: "order",
+          url,
+          ud: userData,
+          label: `${cleanName.split(/\s+/)[0]} · ••${digits.slice(-2)}`,
+          total,
+          items: lines.map((l) => ({ id: l.product.sku, q: l.qty, p: l.product.price })),
+        },
+      }),
+      sendCapi({
+        eventName: "Lead",
+        eventId: String(eventId ?? leadId),
+        eventSourceUrl: url,
+        userData,
         customData: {
+          content_name: "Buyurtma (to'lanmagan)",
+          lead_id: leadId,
           currency: "UZS",
-          value: total,
+          value: 0,
           content_type: "product",
           content_ids: lines.map((l) => l.product.sku),
-          contents: lines.map((l) => ({ id: l.product.sku, quantity: l.qty, item_price: l.product.price })),
           num_items: count,
         },
       }),
@@ -104,7 +109,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Buyurtmani yuborib bo'lmadi, qayta urinib ko'ring" }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, total });
+    return NextResponse.json({ ok: true, total, leadId });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Server xatosi" }, { status: 500 });
