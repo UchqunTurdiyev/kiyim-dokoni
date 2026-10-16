@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendTelegram } from "@/lib/telegram";
-import { sendCapiEvent } from "@/lib/capi";
+import { buildUserData, sendCapi } from "@/lib/capi";
+import { newLeadId } from "@/lib/leadToken";
+import { notifyLeadWithButton } from "@/lib/leadFlow";
+import { formatPhoneDigits, getClientSignals, siteUrl, utmToText } from "@/lib/request";
 
 export const runtime = "nodejs";
 
@@ -8,47 +10,50 @@ export async function POST(req: NextRequest) {
   try {
     const { name, phone, address, eventId, pageUrl, utm } = await req.json();
 
-    const cleanName = String(name ?? "").trim();
-    const cleanAddress = String(address ?? "").trim();
+    const cleanName = String(name ?? "").trim().slice(0, 80);
+    const cleanAddress = String(address ?? "").trim().slice(0, 200);
     const digits = String(phone ?? "").replace(/\D/g, "");
+    const url = typeof pageUrl === "string" ? pageUrl.slice(0, 500) : undefined;
 
     if (cleanName.length < 2) return NextResponse.json({ error: "Ismni kiriting" }, { status: 400 });
     if (!/^998\d{9}$/.test(digits)) return NextResponse.json({ error: "Telefon raqam noto'g'ri" }, { status: 400 });
     if (cleanAddress.length < 3) return NextResponse.json({ error: "Manzilni kiriting" }, { status: 400 });
 
-    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || undefined;
-    const userAgent = req.headers.get("user-agent") ?? undefined;
-    const fbp = req.cookies.get("_fbp")?.value;
-    const fbc = req.cookies.get("_fbc")?.value;
-
+    const leadId = newLeadId();
+    const signals = getClientSignals(req, url);
+    // external_id = telefon raqam: Lead va keyingi Purchase bitta odamga bog'lanadi
+    const userData = buildUserData({ phone: digits, firstName: cleanName, city: cleanAddress, externalId: digits, ...signals });
     const time = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
-    const formattedPhone = `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10)}`;
 
-    const utmText = utm && typeof utm === "object"
-      ? Object.entries(utm as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(", ")
-      : "";
-
-    // Telegram — majburiy, CAPI — xato bo'lsa ham arizani to'xtatmaydi
     const [tg, capi] = await Promise.allSettled([
-      sendTelegram({
-        "👤 Ism": cleanName,
-        "📞 Telefon": formattedPhone,
-        "📍 Manzil": cleanAddress,
-        "🕒 Vaqt": time,
-        "🔗 UTM": utmText,
+      notifyLeadWithButton({
+        title: "🛍 <b>Yangi ariza!</b>",
+        lines: {
+          "🆔 Lid": leadId,
+          "👤 Ism": cleanName,
+          "📞 Telefon": formatPhoneDigits(digits),
+          "📍 Manzil": cleanAddress,
+          "🕒 Vaqt": time,
+          "🔗 UTM": utmToText(utm),
+          "📊 Meta": signals.fbc ? "reklamadan (fbc bor)" : signals.fbp ? "pixel (fbp bor)" : "",
+        },
+        baseUrl: siteUrl(req),
+        payload: {
+          v: 1,
+          lid: leadId,
+          t: Math.floor(Date.now() / 1000),
+          src: "lead",
+          url,
+          ud: userData,
+          label: `${cleanName.split(/\s+/)[0]} · ••${digits.slice(-2)}`,
+        },
       }),
-      sendCapiEvent({
+      sendCapi({
         eventName: "Lead",
-        eventId: String(eventId ?? ""),
-        eventSourceUrl: pageUrl,
-        phone: digits,
-        firstName: cleanName,
-        city: cleanAddress,
-        ip,
-        userAgent,
-        fbp,
-        fbc,
-        customData: { content_name: "Kiyim do'koni ariza", currency: "UZS", value: 0 },
+        eventId: String(eventId ?? leadId),
+        eventSourceUrl: url,
+        userData,
+        customData: { content_name: "Kiyim do'koni ariza", lead_id: leadId, currency: "UZS", value: 0 },
       }),
     ]);
 
@@ -58,7 +63,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Arizani yuborib bo'lmadi, qayta urinib ko'ring" }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, leadId });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Server xatosi" }, { status: 500 });
