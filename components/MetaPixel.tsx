@@ -12,6 +12,7 @@ export default function MetaPixel() {
 
   // Sahifalar orasida o'tilganda PageView (birinchi PageView skriptning o'zida)
   useEffect(() => {
+    if (pathname?.startsWith("/sotuv")) return;
     if (first.current) {
       first.current = false;
       return;
@@ -19,7 +20,8 @@ export default function MetaPixel() {
     window.fbq?.("track", "PageView");
   }, [pathname]);
 
-  if (!PIXEL_ID) return null;
+  // Sotuvchi sahifasida pixel ishlamaydi — sotuvchining brauzeri mijoz sifatida hisoblanmasin
+  if (!PIXEL_ID || pathname?.startsWith("/sotuv")) return null;
 
   return (
     <>
