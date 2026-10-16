@@ -76,14 +76,16 @@ export default function CheckoutModal() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Xatolik yuz berdi");
 
+      // Purchase emas — Lead (to'lov sotuvchi tasdiqlagandan keyin serverdan Purchase ketadi)
       fbqTrack(
-        "Purchase",
+        "Lead",
         {
+          content_name: "Buyurtma (to'lanmagan)",
           content_ids: checkout.lines.map((l) => l.product.sku),
           content_type: "product",
           num_items: count,
-          value: data.total ?? total,
           currency: "UZS",
+          value: 0,
         },
         eventId
       );
