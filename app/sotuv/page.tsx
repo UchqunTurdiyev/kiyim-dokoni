@@ -82,7 +82,7 @@ export default async function SotuvPage({ searchParams }: { searchParams: Promis
           </ul>
         </div>
 
-        <PurchaseForm token={t} defaultValue={lead.total} />
+        <PurchaseForm token={t} defaultValue={lead.total} pinRequired={!!process.env.SALES_PIN} />
       </div>
     </main>
   );
