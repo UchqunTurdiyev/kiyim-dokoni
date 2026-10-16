@@ -19,10 +19,14 @@ export type LeadTokenPayload = {
   tg?: { c: string; m: number }; // Telegram chat_id va message_id (to'landi belgisi uchun)
 };
 
+// Kalit: LEAD_TOKEN_SECRET (tavsiya). Bo'lmasa — serverdagi maxfiy tokenlardan avtomatik hosil qilinadi,
+// shuning uchun qo'shimcha sozlamasiz ham ishlaydi. Bu tokenlar faqat serverda, brauzerga chiqmaydi.
 function key() {
-  const secret = process.env.LEAD_TOKEN_SECRET;
-  if (!secret || secret.length < 32) throw new Error("LEAD_TOKEN_SECRET kamida 32 belgi bo'lishi kerak");
-  return crypto.createHash("sha256").update(secret).digest(); // 32 bayt
+  const secret =
+    process.env.LEAD_TOKEN_SECRET ||
+    [process.env.TELEGRAM_BOT_TOKEN, process.env.META_CAPI_ACCESS_TOKEN].filter(Boolean).join("|");
+  if (!secret || secret.length < 32) throw new Error("Shifrlash kaliti yo'q: LEAD_TOKEN_SECRET yoki TELEGRAM_BOT_TOKEN sozlang");
+  return crypto.createHash("sha256").update("lead-token-v1|" + secret).digest(); // 32 bayt
 }
 
 export function encodeLeadToken(payload: LeadTokenPayload): string {

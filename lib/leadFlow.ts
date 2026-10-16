@@ -12,8 +12,16 @@ export async function notifyLeadWithButton(opts: {
   const { chatId, messageId } = await sendTelegram(opts.lines, opts.title);
 
   // 2) Token: heshlangan user_data + fbp/fbc/ip/UA + buyurtma + Telegram xabar ID — hammasi AES-256-GCM bilan shifrlangan
-  const token = encodeLeadToken({ ...opts.payload, tg: { c: chatId, m: messageId } });
-  const link = `${opts.baseUrl}/sotuv?t=${token}`;
+  // Lid allaqachon Telegramga tushdi — tugma yasashda xato bo'lsa ham ariza muvaffaqiyatli hisoblanadi
+  let link = "";
+  try {
+    const token = encodeLeadToken({ ...opts.payload, tg: { c: chatId, m: messageId } });
+    link = `${opts.baseUrl}/sotuv?t=${token}`;
+  } catch (e) {
+    console.error("Token yasalmadi:", e);
+    await replyTo(chatId, messageId, `⚠️ To'lov tugmasi yasalmadi: ${e instanceof Error ? e.message : "xato"}`).catch(console.error);
+    return { chatId, messageId, link };
+  }
 
   // 3) Xabarga tugma qo'shiladi
   try {
