@@ -19,7 +19,15 @@ function save(key: string, v: string) {
   }
 }
 
-export default function PurchaseForm({ token, defaultValue }: { token: string; defaultValue?: number }) {
+export default function PurchaseForm({
+  token,
+  defaultValue,
+  pinRequired = true,
+}: {
+  token: string;
+  defaultValue?: number;
+  pinRequired?: boolean;
+}) {
   const [value, setValue] = useState(defaultValue ? fmt(String(defaultValue)) : "");
   const [seller, setSeller] = useState("");
   const [pin, setPin] = useState("");
@@ -37,7 +45,7 @@ export default function PurchaseForm({ token, defaultValue }: { token: string; d
     setError("");
     const amount = Number(value.replace(/\D/g, ""));
     if (amount < 1000) return setError("To'langan summani kiriting");
-    if (!pin) return setError("PIN kodni kiriting");
+    if (pinRequired && !pin) return setError("PIN kodni kiriting");
     if (!confirm(`${fmt(String(amount))} so'm to'lov Metaga Purchase sifatida yuborilsinmi?`)) return;
 
     setLoading(true);
@@ -93,6 +101,7 @@ export default function PurchaseForm({ token, defaultValue }: { token: string; d
         <span>Izoh (ixtiyoriy)</span>
         <input type="text" placeholder="Naqd / karta, qo'shimcha mahsulot..." value={note} onChange={(e) => setNote(e.target.value)} />
       </label>
+      {pinRequired && (
       <label>
         <span>Sotuv PIN kodi</span>
         <input
@@ -103,6 +112,7 @@ export default function PurchaseForm({ token, defaultValue }: { token: string; d
           onChange={(e) => setPin(e.target.value)}
         />
       </label>
+      )}
 
       {error && <p className="form-error">{error}</p>}
 
