@@ -8,9 +8,10 @@ import { siteUrl } from "@/lib/request";
 
 export const runtime = "nodejs";
 
+// SALES_PIN o'rnatilmagan bo'lsa PIN so'ralmaydi (link baribir shifrlangan va faqat yopiq Telegram guruhda)
 function pinOk(pin: string) {
   const expected = process.env.SALES_PIN;
-  if (!expected) throw new Error("SALES_PIN sozlanmagan");
+  if (!expected) return true;
   const a = crypto.createHash("sha256").update(pin).digest();
   const b = crypto.createHash("sha256").update(expected).digest();
   return crypto.timingSafeEqual(a, b);
