@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildUserData, sendCapi } from "@/lib/capi";
 import { newLeadId } from "@/lib/leadToken";
 import { notifyLeadWithButton } from "@/lib/leadFlow";
+import { createAmoLead } from "@/lib/amocrm";
+import { replyTo } from "@/lib/telegram";
 import { formatPhoneDigits, getClientSignals, siteUrl, utmToText } from "@/lib/request";
 
 export const runtime = "nodejs";
@@ -25,7 +27,9 @@ export async function POST(req: NextRequest) {
     const userData = buildUserData({ phone: digits, firstName: cleanName, city: cleanAddress, externalId: digits, ...signals });
     const time = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
 
-    const [tg, capi] = await Promise.allSettled([
+    const metaSource = signals.fbc ? "reklamadan (fbc bor)" : signals.fbp ? "pixel (fbp bor)" : "";
+
+    const [tg, capi, amo] = await Promise.allSettled([
       notifyLeadWithButton({
         title: "🛍 <b>Yangi ariza!</b>",
         lines: {
@@ -55,9 +59,29 @@ export async function POST(req: NextRequest) {
         userData,
         customData: { content_name: "Kiyim do'koni ariza", lead_id: leadId, currency: "UZS", value: 0 },
       }),
+      createAmoLead({
+        leadId,
+        name: cleanName,
+        phoneDigits: digits,
+        address: cleanAddress,
+        source: "lead",
+        utm: utm && typeof utm === "object" ? utm : undefined,
+        pageUrl: url,
+        metaSource,
+      }),
     ]);
 
     if (capi.status === "rejected") console.error("CAPI:", capi.reason);
+    if (amo.status === "rejected") {
+      console.error("amoCRM:", amo.reason);
+      if (tg.status === "fulfilled")
+        await replyTo(tg.value.chatId, tg.value.messageId, "⚠️ Bu lid amoCRM'ga tushmadi — qo'lda kiriting.").catch(console.error);
+    }
+    if (tg.status === "rejected" && amo.status === "fulfilled" && amo.value) {
+      // Telegram ishlamadi, lekin lid amoCRM'da saqlandi — mijozga xato ko'rsatmaymiz
+      console.error(tg.reason);
+      return NextResponse.json({ ok: true, leadId });
+    }
     if (tg.status === "rejected") {
       console.error(tg.reason);
       return NextResponse.json({ error: "Arizani yuborib bo'lmadi, qayta urinib ko'ring" }, { status: 500 });
